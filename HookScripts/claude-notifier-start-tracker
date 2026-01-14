@@ -1,0 +1,152 @@
+#!/bin/bash
+#
+# claude-notifier-start-tracker
+# Tracks Claude Code session starts and notifies ClaudeNotifier app
+#
+# Usage: echo '{"session_id": "..."}' | claude-notifier-start-tracker
+#
+
+set -e
+
+SOCKET_PATH="/tmp/claude-notifier.sock"
+APP_NAME="ClaudeNotifier"
+APP_PATH="/Applications/${APP_NAME}.app"
+FALLBACK_APP_PATH="$HOME/Applications/${APP_NAME}.app"
+
+# Read JSON from stdin
+INPUT_JSON=$(cat)
+
+# Function to extract session_id using jq
+extract_session_id_jq() {
+    echo "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null
+}
+
+# Function to extract session_id using Python (fallback)
+extract_session_id_python() {
+    python3 << EOF
+import json
+import sys
+
+try:
+    data = json.loads('''$INPUT_JSON''')
+    session_id = data.get('session_id', '')
+    if session_id:
+        print(session_id)
+except:
+    pass
+EOF
+}
+
+# Function to get current timestamp in ISO format
+get_timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Function to send JSON to socket using netcat
+send_with_nc() {
+    local json_data="$1"
+    echo "$json_data" | nc -U "$SOCKET_PATH" 2>/dev/null
+    return $?
+}
+
+# Function to send JSON to socket using Python (fallback)
+send_with_python() {
+    local json_data="$1"
+    python3 << EOF
+import socket
+import sys
+
+sock_path = "$SOCKET_PATH"
+data = '''$json_data'''
+
+try:
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(sock_path)
+    sock.sendall(data.encode('utf-8'))
+    sock.close()
+except Exception as e:
+    sys.exit(1)
+EOF
+    return $?
+}
+
+# Function to launch the app if not running
+launch_app_if_needed() {
+    if ! pgrep -x "$APP_NAME" > /dev/null 2>&1; then
+        if [ -d "$APP_PATH" ]; then
+            open "$APP_PATH" 2>/dev/null || true
+        elif [ -d "$FALLBACK_APP_PATH" ]; then
+            open "$FALLBACK_APP_PATH" 2>/dev/null || true
+        fi
+        sleep 0.5
+    fi
+}
+
+# Main logic
+main() {
+    # Extract session_id
+    local session_id=""
+
+    if command -v jq > /dev/null 2>&1; then
+        session_id=$(extract_session_id_jq)
+    fi
+
+    # Fallback to Python if jq didn't work
+    if [ -z "$session_id" ] && command -v python3 > /dev/null 2>&1; then
+        session_id=$(extract_session_id_python)
+    fi
+
+    # If no session_id, exit silently
+    if [ -z "$session_id" ]; then
+        exit 0
+    fi
+
+    # Get current working directory from input or use PWD
+    local cwd=""
+    if command -v jq > /dev/null 2>&1; then
+        cwd=$(echo "$INPUT_JSON" | jq -r '.cwd // empty' 2>/dev/null)
+    fi
+    if [ -z "$cwd" ] && command -v python3 > /dev/null 2>&1; then
+        cwd=$(python3 -c "import json; print(json.loads('''$INPUT_JSON''').get('cwd', ''))" 2>/dev/null || true)
+    fi
+    [ -z "$cwd" ] && cwd="$PWD"
+
+    # Create SessionStart event JSON
+    local timestamp=$(get_timestamp)
+    local event_json=$(cat << EOF
+{
+    "hook_event_name": "SessionStart",
+    "session_id": "$session_id",
+    "timestamp": "$timestamp",
+    "cwd": "$cwd",
+    "transcript_path": ""
+}
+EOF
+)
+
+    # Launch app if needed
+    if [ ! -S "$SOCKET_PATH" ]; then
+        launch_app_if_needed
+    fi
+
+    # If socket still doesn't exist, exit silently
+    if [ ! -S "$SOCKET_PATH" ]; then
+        exit 0
+    fi
+
+    # Try to send using netcat first
+    if command -v nc > /dev/null 2>&1; then
+        if send_with_nc "$event_json"; then
+            exit 0
+        fi
+    fi
+
+    # Fallback to Python
+    if command -v python3 > /dev/null 2>&1; then
+        send_with_python "$event_json" || true
+    fi
+}
+
+# Run main, but always exit 0 to not block Claude
+main || true
+exit 0

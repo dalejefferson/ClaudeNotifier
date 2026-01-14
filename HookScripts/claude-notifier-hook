@@ -1,0 +1,87 @@
+#!/bin/bash
+#
+# claude-notifier-hook
+# Receives JSON from Claude Code hooks and forwards to ClaudeNotifier app
+#
+# Usage: echo '{"event": "..."}' | claude-notifier-hook
+#
+
+set -e
+
+SOCKET_PATH="/tmp/claude-notifier.sock"
+APP_NAME="ClaudeNotifier"
+APP_PATH="/Applications/${APP_NAME}.app"
+FALLBACK_APP_PATH="$HOME/Applications/${APP_NAME}.app"
+
+# Read JSON from stdin
+JSON_INPUT=$(cat)
+
+# Function to send JSON to socket using netcat
+send_with_nc() {
+    echo "$JSON_INPUT" | nc -U "$SOCKET_PATH" 2>/dev/null
+    return $?
+}
+
+# Function to send JSON to socket using Python (fallback)
+send_with_python() {
+    python3 << EOF
+import socket
+import sys
+
+sock_path = "$SOCKET_PATH"
+data = '''$JSON_INPUT'''
+
+try:
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(sock_path)
+    sock.sendall(data.encode('utf-8'))
+    sock.close()
+except Exception as e:
+    sys.exit(1)
+EOF
+    return $?
+}
+
+# Function to launch the app if not running
+launch_app_if_needed() {
+    # Check if app is running
+    if ! pgrep -x "$APP_NAME" > /dev/null 2>&1; then
+        # Try to open the app
+        if [ -d "$APP_PATH" ]; then
+            open "$APP_PATH" 2>/dev/null || true
+        elif [ -d "$FALLBACK_APP_PATH" ]; then
+            open "$FALLBACK_APP_PATH" 2>/dev/null || true
+        fi
+        # Wait briefly for socket to become available
+        sleep 0.5
+    fi
+}
+
+# Main logic
+main() {
+    # If socket doesn't exist, try to launch the app
+    if [ ! -S "$SOCKET_PATH" ]; then
+        launch_app_if_needed
+    fi
+
+    # If socket still doesn't exist after launch attempt, exit silently
+    if [ ! -S "$SOCKET_PATH" ]; then
+        exit 0
+    fi
+
+    # Try to send using netcat first (preferred)
+    if command -v nc > /dev/null 2>&1; then
+        if send_with_nc; then
+            exit 0
+        fi
+    fi
+
+    # Fallback to Python
+    if command -v python3 > /dev/null 2>&1; then
+        send_with_python || true
+    fi
+}
+
+# Run main, but always exit 0 to not block Claude
+main || true
+exit 0
