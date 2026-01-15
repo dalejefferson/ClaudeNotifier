@@ -43,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Flush all pending batched writes
+        EventStore.shared.flushToDisk()
+        SessionTracker.shared.flush()
+
         if let observer = eventObserver {
             NotificationCenter.default.removeObserver(observer)
             eventObserver = nil
@@ -93,21 +97,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 enrichedEvent.duration = duration
             }
 
-            // Add task summary from transcript if available
-            if enrichedEvent.taskSummary == nil && !event.transcriptPath.isEmpty {
-                let (summary, _, _) = TranscriptParser.parseTranscript(at: event.transcriptPath)
-                enrichedEvent.taskSummary = summary
-            }
-
-            // Persist enriched event to history
-            EventStore.shared.save(event: enrichedEvent)
-
-            // Show notification window
-            showNotificationWindow(for: enrichedEvent)
-
-            // Clear session if completed
+            // Clear session if completed (do this before async work)
             if event.stopReason != .interrupt {
                 sessionTracker.clearSession(sessionId: event.sessionId)
+            }
+
+            // Add task summary from transcript if available (background thread)
+            if enrichedEvent.taskSummary == nil && !event.transcriptPath.isEmpty {
+                // Parse transcript on background thread to avoid blocking UI
+                DispatchQueue.global(qos: .utility).async { [weak self] in
+                    let (summary, _, _) = TranscriptParser.parseTranscript(at: event.transcriptPath)
+
+                    DispatchQueue.main.async {
+                        var finalEvent = enrichedEvent
+                        finalEvent.taskSummary = summary
+
+                        // Persist enriched event to history
+                        EventStore.shared.save(event: finalEvent)
+
+                        // Show notification window
+                        self?.showNotificationWindow(for: finalEvent)
+                    }
+                }
+            } else {
+                // No transcript parsing needed - save and show immediately
+                EventStore.shared.save(event: enrichedEvent)
+                showNotificationWindow(for: enrichedEvent)
             }
         }
     }

@@ -32,7 +32,12 @@ class RateLimitFetcher: ObservableObject {
 
     private var timer: Timer?
     private var cancellables = Set<AnyCancellable>()
-    private let refreshInterval: TimeInterval = 60.0
+
+    // Adaptive polling with exponential backoff
+    private var currentInterval: TimeInterval = 60.0
+    private let minInterval: TimeInterval = 60.0
+    private let maxInterval: TimeInterval = 300.0
+    private var consecutiveErrors = 0
 
     private var cachedAccessToken: String?
     private var tokenLastFetched: Date?
@@ -40,6 +45,19 @@ class RateLimitFetcher: ObservableObject {
 
     private let apiEndpoint = "https://api.anthropic.com/api/oauth/usage"
     private let keychainService = "Claude Code-credentials"
+
+    // Static formatters (avoid recreation on each call)
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let iso8601FormatterNoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     // MARK: - Response Models
 
@@ -93,11 +111,30 @@ class RateLimitFetcher: ObservableObject {
         // Fetch immediately
         fetchUsageData()
 
-        // Set up periodic refresh
+        // Set up periodic refresh with adaptive interval
+        scheduleNextFetch()
+    }
+
+    /// Reschedules the timer with the current interval (for adaptive polling)
+    private func scheduleNextFetch() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: currentInterval, repeats: false) { [weak self] _ in
             self?.fetchUsageData()
+            self?.scheduleNextFetch()
         }
+    }
+
+    /// Handle successful fetch - reset backoff
+    private func handleFetchSuccess() {
+        consecutiveErrors = 0
+        currentInterval = minInterval
+    }
+
+    /// Handle fetch error - apply exponential backoff
+    private func handleFetchError() {
+        consecutiveErrors += 1
+        currentInterval = min(currentInterval * 1.5, maxInterval)
+        print("RateLimitFetcher: Error #\(consecutiveErrors), backing off to \(Int(currentInterval))s")
     }
 
     /// Stop the periodic refresh timer
@@ -171,7 +208,10 @@ class RateLimitFetcher: ObservableObject {
                     self?.isLoading = false
                     if case .failure(let error) = completion {
                         self?.lastError = error.localizedDescription
+                        self?.handleFetchError()
                         print("RateLimitFetcher error: \(error)")
+                    } else {
+                        self?.handleFetchSuccess()
                     }
                 },
                 receiveValue: { [weak self] response in
@@ -214,16 +254,13 @@ class RateLimitFetcher: ObservableObject {
     }
 
     private func parseISO8601Date(_ dateString: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        if let date = formatter.date(from: dateString) {
+        // Use static formatters to avoid recreation
+        if let date = Self.iso8601Formatter.date(from: dateString) {
             return date
         }
 
         // Try without fractional seconds
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: dateString)
+        return Self.iso8601FormatterNoFractional.date(from: dateString)
     }
 
     private func formatTimeInterval(_ interval: TimeInterval) -> String {

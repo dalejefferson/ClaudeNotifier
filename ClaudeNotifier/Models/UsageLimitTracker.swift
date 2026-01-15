@@ -153,6 +153,18 @@ final class UsageLimitTracker: ObservableObject {
     func refresh() {
         RateLimitFetcher.shared.refresh()
     }
+
+    /// Pauses the countdown timer (for power saving when app is inactive).
+    func pause() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+    }
+
+    /// Resumes the countdown timer.
+    func resume() {
+        guard refreshTimer == nil else { return }
+        startRefreshTimer()
+    }
 }
 
 // MARK: - Status Level

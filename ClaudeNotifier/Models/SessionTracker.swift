@@ -42,6 +42,11 @@ final class SessionTracker: ObservableObject {
     /// JSON decoder for persistence.
     private let decoder = JSONDecoder()
 
+    /// Batched persistence timer.
+    private var persistTimer: Timer?
+    private var needsPersist = false
+    private let batchInterval: TimeInterval = 2.0
+
     // MARK: - Singleton
 
     /// Shared instance for app-wide session tracking.
@@ -56,9 +61,9 @@ final class SessionTracker: ObservableObject {
     init(persistencePath: String? = nil) {
         self.persistencePath = persistencePath ?? Self.defaultPersistencePath
 
-        // Configure encoder for readable dates
+        // Configure encoder for compact JSON
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.sortedKeys]  // Compact JSON (no prettyPrinted)
         decoder.dateDecodingStrategy = .iso8601
 
         // Load any previously saved sessions
@@ -87,7 +92,7 @@ final class SessionTracker: ObservableObject {
         }
 
         sessions[sessionId] = Date()
-        save()
+        schedulePersist()
         return true
     }
 
@@ -104,7 +109,7 @@ final class SessionTracker: ObservableObject {
         }
 
         sessions[sessionId] = timestamp
-        save()
+        schedulePersist()
         return true
     }
 
@@ -147,13 +152,13 @@ final class SessionTracker: ObservableObject {
     /// - Parameter sessionId: The Claude Code session ID to remove.
     func clearSession(sessionId: String) {
         sessions.removeValue(forKey: sessionId)
-        save()
+        schedulePersist()
     }
 
     /// Removes all tracked sessions.
     func clearAllSessions() {
         sessions.removeAll()
-        save()
+        schedulePersist()
     }
 
     // MARK: - Subagent Management
@@ -205,6 +210,24 @@ final class SessionTracker: ObservableObject {
     }
 
     // MARK: - Persistence
+
+    /// Schedules a batched persist operation.
+    private func schedulePersist() {
+        needsPersist = true
+        guard persistTimer == nil else { return }
+        persistTimer = Timer.scheduledTimer(withTimeInterval: batchInterval, repeats: false) { [weak self] _ in
+            self?.flush()
+        }
+    }
+
+    /// Flushes any pending writes to disk immediately.
+    func flush() {
+        guard needsPersist else { return }
+        save()
+        needsPersist = false
+        persistTimer?.invalidate()
+        persistTimer = nil
+    }
 
     /// Saves the current sessions to disk.
     ///
@@ -263,7 +286,7 @@ final class SessionTracker: ObservableObject {
         let removedCount = initialCount - sessions.count
 
         if removedCount > 0 {
-            save()
+            schedulePersist()
         }
 
         return removedCount

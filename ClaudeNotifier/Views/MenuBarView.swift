@@ -57,9 +57,9 @@ struct MenuBarView: View {
         }
     }
 
-    // Computed analytics
+    // Cached analytics (uses EventStore's cached value to avoid recalculation)
     private var todayStats: AnalyticsCalculator.DailySummary {
-        AnalyticsCalculator.todaySummary(from: EventStore.shared.events)
+        EventStore.shared.cachedTodayStats
     }
 
     // Hourly activity data for sparkline chart

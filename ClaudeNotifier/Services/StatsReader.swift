@@ -69,6 +69,14 @@ final class StatsReader: ObservableObject {
 
     private let statsPath: String
     private var refreshTimer: Timer?
+    private var lastModificationDate: Date?
+
+    // Static formatter (avoid recreation on each refresh)
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 
     init() {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
@@ -77,8 +85,8 @@ final class StatsReader: ObservableObject {
         // Initial load
         refresh()
 
-        // Refresh every 30 seconds
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        // Refresh every 60 seconds (was 30s)
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.refresh()
         }
     }
@@ -88,6 +96,16 @@ final class StatsReader: ObservableObject {
     }
 
     func refresh() {
+        // Check file modification time to avoid unnecessary reads
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: statsPath),
+           let modDate = attrs[.modificationDate] as? Date {
+            if let lastMod = lastModificationDate, modDate <= lastMod {
+                // File hasn't changed, skip read
+                return
+            }
+            lastModificationDate = modDate
+        }
+
         guard let data = FileManager.default.contents(atPath: statsPath) else {
             return
         }
@@ -95,10 +113,8 @@ final class StatsReader: ObservableObject {
         do {
             let stats = try JSONDecoder().decode(ClaudeStats.self, from: data)
 
-            // Get today's date string
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let today = formatter.string(from: Date())
+            // Get today's date string using static formatter
+            let today = Self.dateFormatter.string(from: Date())
 
             // Find today's activity or most recent
             var messagesCount = 0

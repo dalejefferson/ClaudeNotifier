@@ -46,14 +46,30 @@ final class EventStore: ObservableObject {
     /// All stored events, sorted by timestamp (newest first).
     @Published private(set) var events: [ClaudeEvent] = []
 
+    /// Cached analytics for today (avoids recalculation on every access).
+    @Published private(set) var cachedTodayStats: AnalyticsCalculator.DailySummary = AnalyticsCalculator.DailySummary(
+        date: Date(),
+        taskCount: 0,
+        totalDuration: 0,
+        averageDuration: 0,
+        completedCount: 0,
+        interruptedCount: 0,
+        projectBreakdown: [:]
+    )
+
     /// Path to the persistence file.
     private let persistencePath: String
 
-    /// JSON encoder for persistence.
+    /// Batched persistence timer.
+    private var persistTimer: Timer?
+    private var needsPersist = false
+    private let batchInterval: TimeInterval = 5.0
+
+    /// JSON encoder for persistence (compact JSON for smaller files).
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.sortedKeys]  // Compact JSON (no prettyPrinted)
         return encoder
     }()
 
@@ -81,6 +97,7 @@ final class EventStore: ObservableObject {
     init(persistencePath: String? = nil) {
         self.persistencePath = persistencePath ?? Self.defaultPersistencePath
         load()
+        updateCachedAnalytics()
     }
 
     /// Default path for event persistence file.
@@ -99,7 +116,35 @@ final class EventStore: ObservableObject {
         guard event.type != .sessionStart else { return }
 
         events.insert(event, at: 0)  // Newest first
+        updateCachedAnalytics()  // Update cache immediately
+        schedulePersist()  // Schedule batched write
+    }
+
+    // MARK: - Batched Persistence
+
+    /// Schedules a batched persist operation.
+    private func schedulePersist() {
+        needsPersist = true
+        guard persistTimer == nil else { return }
+        persistTimer = Timer.scheduledTimer(withTimeInterval: batchInterval, repeats: false) { [weak self] _ in
+            self?.flushToDisk()
+        }
+    }
+
+    /// Flushes any pending writes to disk immediately.
+    func flushToDisk() {
+        guard needsPersist else { return }
         persist()
+        needsPersist = false
+        persistTimer?.invalidate()
+        persistTimer = nil
+    }
+
+    // MARK: - Analytics Caching
+
+    /// Updates the cached analytics for today.
+    private func updateCachedAnalytics() {
+        cachedTodayStats = AnalyticsCalculator.todaySummary(from: events)
     }
 
     /// Returns all events within a date range.
@@ -152,7 +197,8 @@ final class EventStore: ObservableObject {
     /// Clears all stored events.
     func clearAll() {
         events.removeAll()
-        persist()
+        updateCachedAnalytics()
+        schedulePersist()
     }
 
     // MARK: - Persistence
@@ -206,7 +252,8 @@ final class EventStore: ObservableObject {
 
         if removedCount > 0 {
             metadata.lastCleanup = Date()
-            persist()
+            updateCachedAnalytics()
+            schedulePersist()
         }
 
         return removedCount
