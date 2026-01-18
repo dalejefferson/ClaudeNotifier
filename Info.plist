@@ -50,6 +50,9 @@
     <key>NSAppleEventsUsageDescription</key>
     <string>ClaudeNotifier needs access to send Apple Events for Terminal integration and system notifications.</string>
 
+    <key>NSFaceIDUsageDescription</key>
+    <string>ClaudeNotifier uses Touch ID to securely access your Claude API credentials.</string>
+
     <key>NSUserNotificationAlertStyle</key>
     <string>alert</string>
 

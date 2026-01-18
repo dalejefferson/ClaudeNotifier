@@ -286,6 +286,22 @@ class RateLimitFetcher: ObservableObject {
             return cached
         }
 
+        // Step 1: Try biometric-protected keychain (Touch ID prompt)
+        if BiometricAuthManager.shared.hasBiometricToken {
+            if let token = BiometricAuthManager.shared.getBiometricToken() {
+                print("RateLimitFetcher: Got token via Touch ID")
+                cachedAccessToken = token
+                tokenLastFetched = Date()
+                return token
+            } else {
+                // User cancelled or auth failed - fall back to local cache
+                print("RateLimitFetcher: Touch ID cancelled/failed, using local cache")
+                return getTokenFromLocalCache()
+            }
+        }
+
+        // Step 2: No biometric token yet - read from Claude Code's keychain (password prompt once)
+        print("RateLimitFetcher: No biometric token, reading from Claude Code keychain...")
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -299,7 +315,6 @@ class RateLimitFetcher: ObservableObject {
         guard status == errSecSuccess,
               let data = result as? Data else {
             print("RateLimitFetcher: Failed to retrieve Keychain item. Status: \(status)")
-            // Try reading from local cache file as fallback
             return getTokenFromLocalCache()
         }
 
@@ -310,8 +325,13 @@ class RateLimitFetcher: ObservableObject {
                 // Cache the token
                 cachedAccessToken = token
                 tokenLastFetched = Date()
-                // Also save to local cache for persistence
                 saveTokenToLocalCache(token)
+
+                // Step 3: Store in biometric keychain for future Touch ID access
+                if BiometricAuthManager.shared.storeBiometricToken(token) {
+                    print("RateLimitFetcher: Token stored for future Touch ID access")
+                }
+
                 return token
             }
             return nil
@@ -356,5 +376,6 @@ class RateLimitFetcher: ObservableObject {
         cachedAccessToken = nil
         tokenLastFetched = nil
         try? FileManager.default.removeItem(at: localCachePath)
+        BiometricAuthManager.shared.clearAuthState()
     }
 }

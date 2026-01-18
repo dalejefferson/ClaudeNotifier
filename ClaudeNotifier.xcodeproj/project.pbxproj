@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		2F2BD1F79E66E3CD1D4F7CA6 /* ClaudeEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B0F7AB03DB2659D98E91BC /* ClaudeEvent.swift */; };
+		HHHHHH01BIOMETRICAU00001 /* BiometricAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = HHHHHH02BIOMETRICAU00002 /* BiometricAuthManager.swift */; };
 		3D2DE11FB6C81991119EF60F /* SessionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14364F6CEF891108EB4DF7A /* SessionTracker.swift */; };
 		456B96E61614953D210D8FCE /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A066E8589868FAC98B7F24BA /* MenuBarView.swift */; };
 		647E59B192865C38DB4A358F /* TranscriptParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69560CC8EAAC4E408211A832 /* TranscriptParser.swift */; };
@@ -31,6 +32,7 @@
 
 /* Begin PBXFileReference section */
 		093E1942A4A0F4F0E21AD464 /* ClaudeNotifierApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeNotifierApp.swift; sourceTree = "<group>"; };
+		HHHHHH02BIOMETRICAU00002 /* BiometricAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthManager.swift; sourceTree = "<group>"; };
 		28B0F7AB03DB2659D98E91BC /* ClaudeEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeEvent.swift; sourceTree = "<group>"; };
 		3A03BDE30455C79B66B30078 /* NotificationWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationWindowView.swift; sourceTree = "<group>"; };
 		40A18F13038CED9F012D716A /* ClaudeNotifier.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClaudeNotifier.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -95,6 +97,7 @@
 		8634DEEAE9ABE2D2CE7FCFBE /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				HHHHHH02BIOMETRICAU00002 /* BiometricAuthManager.swift */,
 				BBBBBB06LAUNCHATLOG00006 /* LaunchAtLoginManager.swift */,
 				EEEEEE02RATELIMIT000002 /* RateLimitFetcher.swift */,
 				D06E44EEEC828A35258B92E8 /* SocketServer.swift */,
@@ -216,6 +219,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BBBBBB03ANALYTICS0000003 /* AnalyticsCalculator.swift in Sources */,
+				HHHHHH01BIOMETRICAU00001 /* BiometricAuthManager.swift in Sources */,
 				CE7C54F7B611658D9F82064D /* AppDelegate.swift in Sources */,
 				2F2BD1F79E66E3CD1D4F7CA6 /* ClaudeEvent.swift in Sources */,
 				FF00054E4DF126E606F01A69 /* ClaudeNotifierApp.swift in Sources */,
